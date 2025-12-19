@@ -16,7 +16,12 @@
 	const gradio = new Gradio<FileExplorerEvents, FileExplorerProps>(props);
 
 	let old_value = $state(gradio.props.value);
+	let old_root = $state(gradio.props.root_dir);
 
+	// 🛠️ FORCE RE-RENDER LOGIC
+	// This creates a unique key based on the directory and patterns.
+	// When these change, the {#key} block in the HTML will destroy 
+	// and recreate the DirectoryExplorer from scratch.
 	let rerender_key = $derived([
 		gradio.props.root_dir,
 		gradio.props.glob,
@@ -24,8 +29,18 @@
 	]);
 
 	$effect(() => {
-		if (old_value != gradio.props.value) {
+		// 1. Handle Selection Changes
+		if (old_value !== gradio.props.value) {
 			old_value = gradio.props.value;
+			gradio.dispatch("change");
+		}
+
+		// 2. Handle Root Directory Changes (Login/Logout Fix)
+		// If the server tells us the root changed, we must clear the selection
+		// to force the UI to fetch the new file list for the new user.
+		if (old_root !== gradio.props.root_dir) {
+			old_root = gradio.props.root_dir;
+			gradio.props.value = []; // Clear selection for new root
 			gradio.dispatch("change");
 		}
 	});

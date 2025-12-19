@@ -180,6 +180,77 @@ class FileExplorer(Component):
 
     @server
     def ls(self, subdirectory: list[str] | None = None) -> list[dict[str, str]] | None:
+        import glob as glob_module
+        import fnmatch
+        import re
+        import os
+
+        if subdirectory is None:
+            subdirectory = []
+
+        full_subdir_path = self._safe_join(subdirectory)
+
+        try:
+            subdir_items = sorted(os.listdir(full_subdir_path))
+        except (FileNotFoundError, PermissionError):
+            return []
+
+        # 1. Expand brace syntax (e.g., {mp3,wav}) into a list of regex-compatible strings
+        # We do this because standard glob doesn't support {} in all Python versions
+        raw_glob = self.glob or "**/*"
+        patterns = []
+        brace_match = re.search(r'\{([^}]+)\}', raw_glob)
+        if brace_match:
+            prefix, choices, suffix = re.match(r'(.*)\{([^}]+)\}(.*)', raw_glob).groups()
+            for opt in choices.split(','):
+                patterns.append(f"{prefix}{opt}{suffix}")
+        else:
+            patterns = [raw_glob]
+
+        # 2. Pre-calculate matching absolute paths for the current subdirectory
+        # We use a set for O(1) lookups
+        matched_absolute_paths = set()
+        for p in patterns:
+            search_pattern = os.path.join(full_subdir_path, p)
+            # recursive=True is vital for the ** logic
+            matches = glob_module.glob(search_pattern, recursive=True)
+            for m in matches:
+                matched_absolute_paths.add(os.path.abspath(m))
+
+        files, folders = [], []
+        for item in subdir_items:
+            full_path = os.path.abspath(os.path.join(full_subdir_path, item))
+
+            try:
+                is_file = not os.path.isdir(full_path)
+            except (PermissionError, OSError):
+                continue
+
+            # Check against ignore_glob (like standard Gradio)
+            if self.ignore_glob and fnmatch.fnmatch(item, self.ignore_glob):
+                continue
+
+            if is_file:
+                # ONLY add files that actually match the glob pattern
+                if full_path in matched_absolute_paths:
+                    files.append({
+                        "name": item,
+                        "type": "file",
+                        "valid": True, # This allows the checkbox to appear
+                    })
+            else:
+                # ALWAYS add folders so the user can navigate the tree
+                # We mark them valid=True so they are expandable
+                folders.append({
+                    "name": item,
+                    "type": "folder",
+                    "valid": True,
+                })
+
+        return folders + files
+    
+    @server
+    def ls_old(self, subdirectory: list[str] | None = None) -> list[dict[str, str]] | None:
         """
         Returns:
             a list of dictionaries, where each dictionary represents a file or subdirectory in the given subdirectory

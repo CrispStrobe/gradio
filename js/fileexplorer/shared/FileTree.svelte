@@ -22,25 +22,26 @@
 	let content: FileNode[] = [];
 	let opened_folders: number[] = [];
 
-	const toggle_open_folder = (i: number): void => {
-		if (opened_folders.includes(i)) {
-			opened_folders = opened_folders.filter((x) => x !== i);
-		} else {
-			opened_folders = [...opened_folders, i];
-		}
-	};
+	// --- IMPROVED REACTIVITY ---
+	
+	// Use a reactive statement that monitors both the path AND the ls function.
+	// When you login/logout, Gradio swaps the server context, changing ls_fn.
+	$: {
+		update_content(path, ls_fn);
+	}
 
-	const open_folder = (i: number): void => {
-		if (!opened_folders.includes(i)) {
-			opened_folders = [...opened_folders, i];
-		}
-	};
-
-	(async () => {
-		content = await ls_fn(path);
+	async function update_content(current_path: string[], current_ls: Function) {
+		// Ensure we are calling the latest version of the server function
+		const result = await current_ls(current_path);
+		
+		// Map results to our local state
+		content = result;
+		
 		if (valid_for_selection) {
-			content = [{ name: ".", type: "file" }, ...content];
+			content = [{ name: ".", type: "file", valid: true }, ...content];
 		}
+
+		// Update folder state
 		opened_folders = content
 			.map((x, i) =>
 				x.type === "folder" &&
@@ -49,7 +50,10 @@
 					: null
 			)
 			.filter((x): x is number => x !== null);
-	})();
+	}
+
+	// Re-run whenever the path or the selection changes
+	$: path, update_content();
 
 	$: if (is_selected_entirely) {
 		content.forEach((x) => {
